@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PWR 원자로 인터랙티브 탐험기</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --energy-opacity: 0.8;
+      --energy-duration: 1.6s;
+      --rod-y: 48px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+    }
+
+    .component {
+      cursor: pointer;
+      transition: opacity 0.2s ease, filter 0.2s ease, transform 0.2s ease;
+    }
+
+    .component:hover {
+      filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.8));
+    }
+
+    .fuel-hover:hover .fuel-cell {
+      stroke: #facc15;
+      stroke-width: 3;
+      filter: drop-shadow(0 0 12px rgba(250, 204, 21, 0.9));
+    }
+
+    .control-rod-group {
+      transform: translateY(var(--rod-y));
+      transition: transform 0.25s ease;
+    }
+
+    .energy-ring {
+      opacity: var(--energy-opacity);
+      transform-origin: center;
+      animation: pulseEnergy var(--energy-duration) infinite ease-in-out;
+    }
+
+    .energy-particle {
+      opacity: var(--energy-opacity);
+      animation: floatParticle var(--energy-duration) infinite ease-in-out;
+    }
+
+    @keyframes pulseEnergy {
+      0%, 100% {
+        transform: scale(0.95);
+        filter: blur(0.4px);
+      }
+      50% {
+        transform: scale(1.08);
+        filter: blur(1.2px);
+      }
+    }
+
+    @keyframes floatParticle {
+      0%, 100% {
+        transform: translateY(0);
+      }
+      50% {
+        transform: translateY(-10px);
+      }
+    }
+
+    .water-flow {
+      stroke-dasharray: 10 8;
+      animation: flowMove 1.8s linear infinite;
+    }
+
+    @keyframes flowMove {
+      from {
+        stroke-dashoffset: 0;
+      }
+      to {
+        stroke-dashoffset: -36;
+      }
+    }
+
+    .pellet {
+      background:
+        radial-gradient(circle at 35% 25%, rgba(255,255,255,0.35), transparent 22%),
+        linear-gradient(145deg, #343a40, #111827 55%, #050505);
+      box-shadow:
+        inset -3px -4px 7px rgba(0,0,0,0.55),
+        inset 2px 2px 5px rgba(255,255,255,0.18),
+        0 6px 12px rgba(0,0,0,0.22);
+    }
+
+    input[type="range"] {
+      accent-color: #2563eb;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen bg-slate-100 text-slate-900">
+  <main class="h-screen max-h-screen overflow-hidden p-4 lg:p-6">
+    <section class="h-full grid grid-cols-1 lg:grid-cols-[1.08fr_0.92fr] gap-4 lg:gap-6">
+
+      <!-- 좌측: 원자로 그래픽 -->
+      <article class="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden flex flex-col min-h-0">
+        <header class="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-slate-900 to-slate-700 text-white">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <h1 class="text-xl lg:text-2xl font-bold">가압경수형 PWR 원자로 탐험기</h1>
+              <p class="text-sm text-slate-200 mt-1">핵연료 집합체와 제어봉을 클릭해 원자로 내부를 탐색하세요.</p>
+            </div>
+            <div class="hidden md:flex gap-2 text-xs">
+              <span class="px-3 py-1 rounded-full bg-blue-500/25 border border-blue-300/40">냉각재 흐름</span>
+              <span class="px-3 py-1 rounded-full bg-red-500/25 border border-red-300/40">열 발생</span>
+            </div>
+          </div>
+        </header>
+
+        <div class="relative flex-1 min-h-0 p-3 lg:p-5 bg-[radial-gradient(circle_at_50%_30%,#eef6ff,transparent_55%)]">
+          <svg id="reactorSvg" class="w-full h-full" viewBox="0 0 680 740" role="img" aria-label="PWR 원자로 압력용기 단면도">
+            <defs>
+              <linearGradient id="vesselMetal" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#64748b"/>
+                <stop offset="16%" stop-color="#cbd5e1"/>
+                <stop offset="50%" stop-color="#f8fafc"/>
+                <stop offset="84%" stop-color="#94a3b8"/>
+                <stop offset="100%" stop-color="#475569"/>
+              </linearGradient>
+
+              <linearGradient id="waterFill" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#bae6fd" stop-opacity="0.42"/>
+                <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.58"/>
+              </linearGradient>
+
+              <radialGradient id="energyGlow" cx="50%" cy="55%" r="55%">
+                <stop offset="0%" stop-color="#f97316" stop-opacity="0.95"/>
+                <stop offset="48%" stop-color="#ef4444" stop-opacity="0.55"/>
+                <stop offset="100%" stop-color="#ef4444" stop-opacity="0"/>
+              </radialGradient>
+
+              <filter id="softShadow" x="-25%" y="-25%" width="150%" height="150%">
+                <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.22"/>
+              </filter>
+
+              <clipPath id="vesselClip">
+                <path d="M210 122
+                         C210 80 470 80 470 122
+                         L470 620
+                         C470 680 210 680 210 620
+                         Z"/>
+              </clipPath>
+
+              <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L10,3 L0,6 Z" fill="#0284c7"/>
+              </marker>
+
+              <marker id="arrowRed" markerWidth="12" markerHeight="12" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L10,3 L0,6 Z" fill="#f97316"/>
+              </marker>
+            </defs>
+
+            <!-- 외부 배관 -->
+            <g aria-label="냉각재 배관">
+              <path class="water-flow" d="M78 440 C120 440 145 440 203 440" fill="none" stroke="#0284c7" stroke-width="16" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+              <path class="water-flow" d="M477 250 C535 250 565 250 610 250" fill="none" stroke="#f97316" stroke-width="16" stroke-linecap="round" marker-end="url(#arrowRed)"/>
+              <text x="75" y="413" font-size="18" font-weight="700" fill="#0369a1">Cold Leg</text>
+              <text x="535" y="222" font-size="18" font-weight="700" fill="#ea580c">Hot Leg</text>
+              <text x="88" y="468" font-size="13" fill="#0369a1">저온 냉각재 유입</text>
+              <text x="522" y="278" font-size="13" fill="#ea580c">고온 냉각재 유출</text>
+            </g>
+
+            <!-- CRDM -->
+            <g id="crdm" aria-label="CRDM 제어봉 구동장치">
+              <rect x="245" y="30" width="32" height="76" rx="10" fill="#334155"/>
+              <rect x="292" y="18" width="32" height="88" rx="10" fill="#334155"/>
+              <rect x="339" y="12" width="32" height="94" rx="10" fill="#334155"/>
+              <rect x="386" y="18" width="32" height="88" rx="10" fill="#334155"/>
+              <rect x="433" y="30" width="32" height="76" rx="10" fill="#334155"/>
+              <rect x="230" y="96" width="250" height="28" rx="14" fill="#475569"/>
+              <text x="490" y="75" font-size="15" font-weight="700" fill="#334155">CRDM</text>
+              <line x1="470" y1="82" x2="438" y2="102" stroke="#334155" stroke-width="2"/>
+            </g>
+
+            <!-- 압력용기 -->
+            <g filter="url(#softShadow)">
+              <path d="M210 122
+                       C210 80 470 80 470 122
+                       L470 620
+                       C470 680 210 680 210 620
+                       Z"
+                    fill="url(#vesselMetal)" stroke="#334155" stroke-width="5"/>
+              <path d="M228 128
+                       C228 102 452 102 452 128
+                       L452 612
+                       C452 650 228 650 228 612
+                       Z"
+                    fill="#f8fafc" opacity="0.55"/>
+            </g>
+
+            <!-- 내부 -->
+            <g clip-path="url(#vesselClip)">
+              <rect x="210" y="120" width="260" height="525" fill="url(#waterFill)"/>
+
+              <!-- 냉각재 흐름 -->
+              <g opacity="0.72">
+                <path class="water-flow" d="M250 585 C230 500 244 430 285 365 C326 300 342 235 330 155" fill="none" stroke="#0ea5e9" stroke-width="5" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+                <path class="water-flow" d="M390 595 C440 510 438 425 400 350 C365 282 355 215 377 150" fill="none" stroke="#0ea5e9" stroke-width="5" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+                <path class="water-flow" d="M328 610 C350 525 350 430 336 345 C322 260 320 205 337 145" fill="none" stroke="#0ea5e9" stroke-width="4" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+              </g>
+
+              <!-- 열 발생 그래픽 -->
+              <g id="energyGraphics" aria-label="열 발생 시각화">
+                <ellipse class="energy-ring" cx="340" cy="493" rx="105" ry="136" fill="url(#energyGlow)"/>
+                <ellipse class="energy-ring" cx="340" cy="493" rx="74" ry="98" fill="none" stroke="#ef4444" stroke-width="7"/>
+                <circle class="energy-particle" cx="284" cy="500" r="8" fill="#f97316"/>
+                <circle class="energy-particle" cx="317" cy="446" r="6" fill="#ef4444"/>
+                <circle class="energy-particle" cx="373" cy="470" r="7" fill="#fb923c"/>
+                <circle class="energy-particle" cx="399" cy="525" r="5" fill="#f97316"/>
+              </g>
+
+              <!-- 핵연료 집합체 -->
+              <g id="fuelAssembly" class="component fuel-hover" tabindex="0" role="button" aria-label="핵연료 집합체">
+                <rect x="250" y="395" width="180" height="205" rx="14" fill="#1e293b" opacity="0.88"/>
+                <g id="fuelGrid">
+                  <rect class="fuel-cell" x="268" y="414" width="22" height="166" rx="5" fill="#facc15" stroke="#a16207" stroke-width="1.2"/>
+                  <rect class="fuel-cell" x="296" y="414" width="22" height="166" rx="5" fill="#fde047" stroke="#a16207" stroke-width="1.2"/>
+                  <rect class="fuel-cell" x="324" y="414" width="22" height="166" rx="5" fill="#facc15" stroke="#a16207" stroke-width="1.2"/>
+                  <rect class="fuel-cell" x="352" y="414" width="22" height="166" rx="5" fill="#fde047" stroke="#a16207" stroke-width="1.2"/>
+                  <rect class="fuel-cell" x="380" y="414" width="22" height="166" rx="5" fill="#facc15" stroke="#a16207" stroke-width="1.2"/>
+                  <rect class="fuel-cell" x="408" y="414" width="12" height="166" rx="4" fill="#fde047" stroke="#a16207" stroke-width="1.2"/>
+                </g>
+                <rect x="260" y="430" width="160" height="8" rx="4" fill="#78350f" opacity="0.55"/>
+                <rect x="260" y="500" width="160" height="8" rx="4" fill="#78350f" opacity="0.55"/>
+                <rect x="260" y="570" width="160" height="8" rx="4" fill="#78350f" opacity="0.55"/>
+              </g>
+
+              <!-- 제어봉 -->
+              <g id="controlRods" class="component" tabindex="0" role="button" aria-label="제어봉">
+                <g class="control-rod-group">
+                  <rect x="277" y="146" width="10" height="318" rx="5" fill="#111827"/>
+                  <rect x="319" y="146" width="10" height="318" rx="5" fill="#111827"/>
+                  <rect x="361" y="146" width="10" height="318" rx="5" fill="#111827"/>
+                  <rect x="403" y="146" width="10" height="318" rx="5" fill="#111827"/>
+                  <rect x="262" y="136" width="168" height="22" rx="10" fill="#0f172a"/>
+                </g>
+              </g>
+            </g>
+
+            <!-- 라벨 -->
+            <g class="pointer-events-none">
+              <text x="250" y="705" font-size="19" font-weight="800" fill="#334155">원자로 압력용기</text>
+              <line x1="338" y1="687" x2="338" y2="646" stroke="#334155" stroke-width="2"/>
+
+              <text x="70" y="545" font-size="17" font-weight="800" fill="#92400e">핵연료 집합체</text>
+              <line x1="190" y1="538" x2="265" y2="512" stroke="#92400e" stroke-width="2"/>
+
+              <text x="502" y="390" font-size="17" font-weight="800" fill="#111827">제어봉</text>
+              <line x1="492" y1="384" x2="407" y2="330" stroke="#111827" stroke-width="2"/>
+
+              <text x="498" y="487" font-size="17" font-weight="800" fill="#0284c7">냉각재(물)</text>
+              <line x1="488" y1="480" x2="430" y2="452" stroke="#0284c7" stroke-width="2"/>
+            </g>
+          </svg>
+
+          <div id="hoverHint" class="absolute left-6 bottom-5 hidden md:block bg-white/90 backdrop-blur border border-yellow-300 shadow-lg rounded-2xl px-4 py-3 text-sm">
+            <p class="font-bold text-yellow-700">핵연료 집합체 Hover</p>
+            <p class="text-slate-600">마우스를 올리면 노란색으로 하이라이트됩니다.</p>
+          </div>
+        </div>
+      </article>
+
+      <!-- 우측: 정보 패널 -->
+      <aside class="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden flex flex-col min-h-0">
+        <header class="px-6 py-5 bg-slate-900 text-white">
+          <p class="text-sm text-blue-200 font-semibold">Interactive Information Panel</p>
+          <h2 class="text-2xl font-black mt-1">정보 패널</h2>
+        </header>
+
+        <div class="flex-1 min-h-0 overflow-auto p-6">
+          <div id="defaultMessage" class="rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+            <div class="mx-auto w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-3xl mb-4">🔎</div>
+            <p class="text-xl font-bold text-slate-800">원자로 내부를 클릭하여 탐험해보세요</p>
+            <p class="text-sm text-slate-500 mt-2">핵연료 집합체 또는 제어봉을 선택하면 상세 설명이 표시됩니다.</p>
+          </div>
+
+          <div id="infoContent" class="hidden space-y-5">
+            <div>
+              <p id="componentBadge" class="inline-flex px-3 py-1 rounded-full text-sm font-bold bg-blue-100 text-blue-700">선택 부품</p>
+              <h3 id="componentTitle" class="text-3xl font-black mt-3 text-slate-900"></h3>
+              <p id="componentDescription" class="text-slate-600 leading-7 mt-3"></p>
+            </div>
+
+            <!-- 펠렛 CSS 사진 효과 -->
+            <section id="pelletPanel" class="hidden rounded-3xl bg-gradient-to-br from-amber-50 to-slate-100 border border-amber-200 p-5">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <h4 class="font-black text-lg text-slate-900">우라늄 펠렛 사진 효과</h4>
+                  <p class="text-sm text-slate-600 mt-1">작은 원통형 펠렛을 연료봉 안에 적층하여 사용합니다.</p>
+                </div>
+                <span class="text-3xl">⚛️</span>
+              </div>
+              <div class="mt-5 grid grid-cols-5 gap-3">
+                <div class="pellet h-12 rounded-full"></div>
+                <div class="pellet h-12 rounded-full"></div>
+                <div class="pellet h-12 rounded-full"></div>
+                <div class="pellet h-12 rounded-full"></div>
+                <div class="pellet h-12 rounded-full"></div>
+                <div class="pellet h-12 rounded-full"></div>
+                <div class="pellet h-12 rounded-full"></div>
+                <div class="pellet h-12 rounded-full"></div>
+                <div class="pellet h-12 rounded-full"></div>
+                <div class="pellet h-12 rounded-full"></div>
+              </div>
+            </section>
+
+            <!-- 제어봉 슬라이더 -->
+            <section id="controlPanel" class="hidden rounded-3xl bg-slate-50 border border-slate-200 p-5">
+              <div class="flex items-center justify-between">
+                <h4 class="font-black text-lg">제어봉 위치 조절</h4>
+                <span id="rodStatus" class="px-3 py-1 rounded-full bg-slate-900 text-white text-sm font-bold">50% 삽입</span>
+              </div>
+
+              <div class="mt-5">
+                <label for="rodSlider" class="block text-sm font-bold text-slate-700 mb-3">
+                  제어봉 삽입 깊이
+                </label>
+
+                <input id="rodSlider" type="range" min="0" max="100" value="50" class="w-full" />
+
+                <div class="flex justify-between text-xs text-slate-500 mt-2">
+                  <span>인출 · 열출력 증가</span>
+                  <span>삽입 · 열출력 감소</span>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3 mt-5">
+                <div class="rounded-2xl bg-white border border-slate-200 p-4">
+                  <p class="text-xs font-bold text-slate-500">열 발생 강도</p>
+                  <p id="heatValue" class="text-2xl font-black text-red-500 mt-1">50%</p>
+                </div>
+                <div class="rounded-2xl bg-white border border-slate-200 p-4">
+                  <p class="text-xs font-bold text-slate-500">애니메이션 속도</p>
+                  <p id="speedValue" class="text-2xl font-black text-blue-600 mt-1">1.6s</p>
+                </div>
+              </div>
+
+              <p class="mt-4 text-sm text-slate-600 leading-6">
+                슬라이더를 오른쪽으로 옮기면 제어봉이 더 깊게 삽입되어 중성자를 더 많이 흡수하고,
+                붉은 열 발생 그래픽이 흐려지며 움직임이 느려집니다.
+              </p>
+            </section>
+
+            <section class="rounded-3xl bg-blue-50 border border-blue-100 p-5">
+              <h4 class="font-black text-blue-900">운전 개념</h4>
+              <p class="text-sm text-blue-800 leading-6 mt-2">
+                PWR은 고압의 물을 냉각재와 감속재로 사용합니다. 핵분열로 가열된 1차 냉각재는
+                Hot Leg로 나가 증기발생기에서 열을 전달하고, 냉각된 물은 Cold Leg로 다시 들어옵니다.
+              </p>
+            </section>
+          </div>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const root = document.documentElement;
+    const defaultMessage = document.getElementById("defaultMessage");
+    const infoContent = document.getElementById("infoContent");
+    const componentBadge = document.getElementById("componentBadge");
+    const componentTitle = document.getElementById("componentTitle");
+    const componentDescription = document.getElementById("componentDescription");
+    const pelletPanel = document.getElementById("pelletPanel");
+    const controlPanel = document.getElementById("controlPanel");
+
+    const fuelAssembly = document.getElementById("fuelAssembly");
+    const controlRods = document.getElementById("controlRods");
+    const rodSlider = document.getElementById("rodSlider");
+    const rodStatus = document.getElementById("rodStatus");
+    const heatValue = document.getElementById("heatValue");
+    const speedValue = document.getElementById("speedValue");
+
+    function showInfo(type) {
+      defaultMessage.classList.add("hidden");
+      infoContent.classList.remove("hidden");
+
+      pelletPanel.classList.toggle("hidden", type !== "fuel");
+      controlPanel.classList.toggle("hidden", type !== "rod");
+
+      if (type === "fuel") {
+        componentBadge.textContent = "핵연료 집합체";
+        componentBadge.className = "inline-flex px-3 py-1 rounded-full text-sm font-bold bg-amber-100 text-amber-700";
+        componentTitle.textContent = "핵연료 집합체";
+        componentDescription.textContent =
+          "우라늄 펠렛이 에너지를 생산하는 곳입니다. 펠렛에서 핵분열이 일어나 열이 발생하고, 이 열은 주변 냉각재로 전달됩니다.";
+      }
+
+      if (type === "rod") {
+        componentBadge.textContent = "제어봉";
+        componentBadge.className = "inline-flex px-3 py-1 rounded-full text-sm font-bold bg-slate-200 text-slate-800";
+        componentTitle.textContent = "제어봉";
+        componentDescription.textContent =
+          "제어봉은 중성자를 흡수하여 핵분열 반응률을 조절합니다. 제어봉을 더 깊게 삽입하면 열 발생이 감소하고, 인출하면 열 발생이 증가합니다.";
+      }
+    }
+
+    function updateControlRod() {
+      const insertion = Number(rodSlider.value);       // 0 = 인출, 100 = 삽입
+      const withdrawal = 100 - insertion;              // 열 발생 강도 기준
+
+      const opacity = 0.18 + withdrawal * 0.0082;      // 0.18 ~ 1.0
+      const duration = 0.75 + insertion * 0.025;       // 0.75s ~ 3.25s
+      const rodY = 8 + insertion * 1.08;               // 8px ~ 116px
+
+      root.style.setProperty("--energy-opacity", opacity.toFixed(2));
+      root.style.setProperty("--energy-duration", `${duration.toFixed(2)}s`);
+      root.style.setProperty("--rod-y", `${rodY.toFixed(1)}px`);
+
+      rodStatus.textContent = `${insertion}% 삽입`;
+      heatValue.textContent = `${withdrawal}%`;
+      speedValue.textContent = `${duration.toFixed(2)}s`;
+    }
+
+    fuelAssembly.addEventListener("click", () => showInfo("fuel"));
+    fuelAssembly.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") showInfo("fuel");
+    });
+
+    controlRods.addEventListener("click", () => showInfo("rod"));
+    controlRods.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") showInfo("rod");
+    });
+
+    rodSlider.addEventListener("input", updateControlRod);
+
+    updateControlRod();
+  </script>
+</body>
+</html>
